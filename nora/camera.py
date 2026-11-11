@@ -9,6 +9,29 @@ import unicodedata
 from . import tools
 
 
+# Mirage speaks English; explicit aliases avoid Portuguese homonyms such as MAN SE.
+PORTUGUESE = {
+    'cup': 'copo', 'glass': 'copo', 'drinking glass': 'copo',
+    'mug': 'caneca', 'coffee mug': 'caneca',
+    'bottle': 'garrafa', 'water bottle': 'garrafa', 'plastic bottle': 'garrafa',
+    'shoe': 'calçado', 'shoes': 'calçado', 'sneaker': 'tênis (calçado)',
+    'phone': 'telefone celular', 'cell phone': 'telefone celular',
+    'mobile phone': 'telefone celular', 'smartphone': 'smartphone',
+    'book': 'livro', 'pen': 'caneta', 'pencil': 'lápis',
+    'keyboard': 'teclado (informática)', 'mouse': 'rato (informática)',
+    'computer mouse': 'rato (informática)', 'laptop': 'computador portátil',
+    'scissors': 'tesoura', 'remote control': 'controle remoto',
+    'watch': 'relógio de pulso', 'spoon': 'colher', 'fork': 'garfo',
+}
+BACKGROUND = {'person', 'man', 'woman', 'boy', 'girl', 'human', 'people',
+              'hand', 'face', 'head', 'wall', 'floor', 'ceiling', 'door',
+              'window', 'table', 'desk', 'chair', 'background'}
+
+
+def search_term(label: str) -> str:
+    return PORTUGUESE.get(label.casefold().strip(), label.strip())
+
+
 def detect(vision, rgb) -> list[dict]:
     result = vision.describe(rgb, language='en', sections=['objects'],
                              fields=['bbox', 'score'], conf=.3, max_objects=12)
@@ -72,10 +95,13 @@ class CameraResearch:
             Args:
                 assunto: nome do objeto copiado do pedido
             """
-            result = tools.wikipedia(assunto)
-            if not result.get('source'):
-                result = tools.wikipedia(assunto, language='en')
-            return result
+            original = self._observed_label
+            if original.casefold() in PORTUGUESE:
+                result = tools.wikipedia(search_term(original))
+                if result.get('source'):
+                    return result
+            # Unknown English labels must not be sent to the Portuguese index.
+            return tools.wikipedia(original, language='en')
 
         self._search_tool = buscar_wikipedia
         self.agent = cactus.Cactus(tools=[buscar_wikipedia], generation=3,
@@ -84,14 +110,16 @@ class CameraResearch:
     def search(self, label: str) -> dict:
         # Uma única chamada proposta pelo Needle. Nunca executamos outra função
         # nem aceitamos um assunto diferente do candidato observado.
+        self._observed_label = label
+        term = search_term(label)
         self.agent.reset()
-        result = self.agent.complete(f'Pesquise na Wikipédia: {label}', max_new_tokens=256)
+        result = self.agent.complete(f'Pesquise na Wikipédia: {term}', max_new_tokens=256)
         calls = result.get('function_calls', [])
         if not calls:
             return {'message': 'O Needle não selecionou uma pesquisa para essa observação.'}
         call = calls[0]
         subject = call.get('arguments', {}).get('assunto')
-        if call.get('name') != 'buscar_wikipedia' or not isinstance(subject, str) or subject.casefold().strip() != label.casefold().strip():
+        if call.get('name') != 'buscar_wikipedia' or not isinstance(subject, str) or search_term(subject).casefold() != term.casefold():
             return {'message': 'O Needle não retornou uma consulta correspondente ao objeto observado.'}
         # A função só roda quando o modelo propõe a chamada válida.
         return self._search_tool(subject)
@@ -202,7 +230,7 @@ def run_camera(index: int = 0, seconds: float = 8, preview: bool = True) -> int:
                     state = 'pausa'
                 else:
                     detections = job.result()
-                    candidates = [obj for obj in detections if obj['name'].casefold() not in {'person', 'hand', 'face'}]
+                    candidates = [obj for obj in detections if obj['name'].casefold().strip() not in BACKGROUND]
                     # Prefer an object near the center, where the user presents it.
                     candidates.sort(key=lambda obj: abs((obj['bbox'][0] + obj['bbox'][2]) / 2 - 500) + abs((obj['bbox'][1] + obj['bbox'][3]) / 2 - 500))
                     label = candidates[0]['name'] if candidates else None
