@@ -16,7 +16,25 @@ def _show(result: dict) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description='NORA — Wikipédia, clima e notas com Needle 3 local.')
     parser.add_argument('pedido', nargs='*', help='Pedido em linguagem natural; sem argumentos abre o modo interativo.')
+    parser.add_argument('--camera', action='store_true', help='Observar webcam com Mirage e pesquisar com Needle 3.')
+    parser.add_argument('--camera-id', type=int, default=0, help='Índice da webcam (padrão: 0).')
+    parser.add_argument('--segundos', type=float, default=8, help='Período de observação, de 3 a 60 segundos.')
+    parser.add_argument('--sem-preview', action='store_true', help='Usar câmera sem abrir a janela de vídeo.')
     args = parser.parse_args(argv)
+    if not 3 <= args.segundos <= 60:
+        parser.error('--segundos deve estar entre 3 e 60.')
+    if args.camera and args.pedido:
+        parser.error('Use --camera sem pedido de texto.')
+    if args.camera:
+        from .camera import run_camera
+        try:
+            return run_camera(args.camera_id, args.segundos, not args.sem_preview)
+        except KeyboardInterrupt:
+            print('\nCâmera encerrada.', file=sys.stderr)
+            return 130
+        except Exception as exc:
+            print(f'Erro no modo câmera: {exc}', file=sys.stderr)
+            return 1
     service = AssistantService()
     try:
         print('Carregando Needle 3 (o primeiro uso pode baixar o modelo)...', file=sys.stderr)

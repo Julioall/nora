@@ -32,12 +32,14 @@ def _error(kind: str, message: str) -> dict:
     return {"kind": kind, "message": message}
 
 
-def wikipedia(assunto: str) -> dict:
+def wikipedia(assunto: str, language: str = "pt") -> dict:
     """Pesquisa um assunto na Wikipédia em português e traz um resumo com link."""
     assunto = assunto.strip()[:120]
     if not assunto:
         return _error("wikipedia", "Diga o assunto que deseja pesquisar na Wikipédia.")
-    endpoint = "https://pt.wikipedia.org/w/api.php"
+    if language not in {"pt", "en"}:
+        raise ValueError("Idioma da Wikipédia inválido")
+    endpoint = f"https://{language}.wikipedia.org/w/api.php"
     try:
         found = _get_json(endpoint, {
             "action": "query", "list": "search", "srsearch": assunto,
@@ -56,7 +58,7 @@ def wikipedia(assunto: str) -> dict:
         page = pages[0] if pages else {}
         article_title = page.get("title", title)
         extract = re.sub(r"\s+", " ", page.get("extract", "")).strip()
-        link = "https://pt.wikipedia.org/wiki/" + quote(article_title.replace(" ", "_"))
+        link = f"https://{language}.wikipedia.org/wiki/" + quote(article_title.replace(" ", "_"))
         if not extract:
             return {"kind": "wikipedia", "message": f"Encontrei o artigo “{article_title}”, mas não consegui extrair seu resumo. Abra a fonte para ler.", "source": link}
         if len(extract) > 950:
