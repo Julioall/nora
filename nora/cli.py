@@ -20,7 +20,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--camera-id', type=int, default=0, help='Índice da webcam (padrão: 0).')
     parser.add_argument('--segundos', type=float, default=8, help='Período de observação, de 3 a 60 segundos.')
     parser.add_argument('--sem-preview', action='store_true', help='Usar câmera sem abrir a janela de vídeo.')
+    parser.add_argument('--monitor-sala', action='store_true', help='Projeto 171: eventos visíveis por mesa na câmera geral.')
+    parser.add_argument('--relatorios', help='Pasta para os relatórios da sessão.')
     args = parser.parse_args(argv)
+    if args.monitor_sala:
+        if args.camera or args.pedido or args.sem_preview:
+            parser.error('--monitor-sala requer janela própria, sem pedido de texto ou --camera.')
+        from .classroom import run_classroom
+        try:
+            return run_classroom(args.camera_id, args.relatorios)
+        except KeyboardInterrupt:
+            return 130
+        except Exception as exc:
+            print(f'Erro no monitor da sala: {exc}', file=sys.stderr)
+            return 1
     if not 3 <= args.segundos <= 60:
         parser.error('--segundos deve estar entre 3 e 60.')
     if args.camera and args.pedido:

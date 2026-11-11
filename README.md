@@ -104,3 +104,24 @@ O Mirage documenta inglês e outros idiomas, mas não português; a extração u
 A janela requer uma sessão gráfica e `opencv-python` (não a edição headless). Se a câmera não abrir, feche outros programas que a utilizem, confira as permissões do sistema ou tente `--camera-id 1`. Sem câmera ou modelos disponíveis, o programa informa o erro; não usa reconhecimento simulado como substituto.
 
 Validação desta versão: testes automatizados com webcam, Mirage, Needle e rede simulados, incluindo observação, consenso, pesquisa, bloqueio de chamadas divergentes e liberação da câmera. A captura física e a qualidade da inferência real precisam ser homologadas no computador de destino.
+
+
+## Projeto 171 — câmera geral da sala
+
+**A proposta não é punir ou vigiar os alunos, mas explorar novas formas de acompanhar a participação e melhorar nossas estratégias pedagógicas.**
+
+```bash
+python -m nora --monitor-sala
+# outra webcam e pasta específica para ESTA sessão:
+python -m nora --monitor-sala --camera-id 1 --relatorios relatorios/aula_01
+```
+
+Marque dois cantos de cada área onde uma pessoa fica sentada: inclua o corpo visível do aluno, não só o tampo da mesa. Cada retângulo vira Mesa 1, Mesa 2 etc. Evite sobreposição. U desfaz a última área. ENTER inicia a observação contínua; R gera o relatório por meio do Needle; Q encerra e também solicita o relatório.
+
+Mirage detecta pessoas e telefones. O painel marca a mesa em verde quando ocupada, azul quando não há pessoa detectada e amarelo quando um telefone é detectado dentro da caixa de uma pessoa naquela mesa. Mudanças precisam persistir por 4 segundos e em pelo menos duas amostras para virar eventos. A saída e o retorno são inferidos apenas pela mudança de ocupação da área; não há identificação de rosto ou acompanhamento de identidade pelo corredor.
+
+O CSV `eventos.csv` é atualizado durante a sessão. O Needle aciona a exportação do `relatorio.json`, com contagens, eventos por mesa e durações aproximadas entre saída/retorno ou aparecimento/desaparecimento do telefone. `mesas.json` guarda a calibração. Sem pasta explícita, os arquivos ficam em `~/.nora/sessoes/<data-hora>/`. Não são gravados quadros ou vídeos.
+
+Uma mesa inicialmente vazia não conta como saída. Falta prolongada de observação interrompe as associações de tempo. Eventos ainda abertos aparecem como abertos no relatório, sem duração inventada. Se o Needle recusar a exportação, o programa informa isso; o CSV já salvo permanece disponível.
+
+**Limites:** ausência de detecção pode ser oclusão ou erro do modelo, sem comprovar que alguém saiu. Telefone junto à pessoa é um indício visual e não comprova manuseio. O sistema não mede atenção, intenção, aprendizagem ou engajamento. A câmera geral pode não ter resolução para detectar celulares pequenos; esse modo é um protótipo que requer validação na sala antes de interpretar seus números. Os registros ficam associados à mesa, sem nomes dos alunos.
