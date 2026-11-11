@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 import time
+import colorsys
 import unicodedata
 
 from . import tools
@@ -60,16 +61,41 @@ def identify(vision, rgb) -> str | None:
     return objects[0]['name'] if objects else None
 
 
+_BOX_COLORS: dict[tuple[str, int], tuple[int, int, int]] = {}
+
+
+def box_color(name: str, occurrence: int = 0) -> tuple[int, int, int]:
+    """Keep colors across frames; distinguish repeated detections of one class."""
+    key = (name.casefold().strip(), occurrence)
+    if key not in _BOX_COLORS:
+        # Golden-angle hues spread adjacent assignments across the color wheel.
+        hue = (len(_BOX_COLORS) * .61803398875) % 1
+        red, green, blue = colorsys.hsv_to_rgb(hue, .48, .98)
+        _BOX_COLORS[key] = (int(blue * 255), int(green * 255), int(red * 255))
+    return _BOX_COLORS[key]
+
+
 def draw_detections(cv2, frame, objects):
     h, w = frame.shape[:2]
+    occurrences = Counter()
     for obj in objects:
+        name = obj['name'].casefold().strip()
+        color = box_color(name, occurrences[name])
+        occurrences[name] += 1
         x0, y0, x1, y1 = obj['bbox']
         start = (int(x0 * w / 1000), int(y0 * h / 1000))
         end = (int(x1 * w / 1000), int(y1 * h / 1000))
-        cv2.rectangle(frame, start, end, (120, 220, 240), 2)
-        cv2.putText(frame, f"{obj['name']} {obj['score']:.0%}",
-                    (start[0], max(20, start[1] - 5)), cv2.FONT_HERSHEY_SIMPLEX,
-                    .6, (120, 220, 240), 2)
+        cv2.rectangle(frame, start, end, color, 2)
+        text = f"{obj['name']} {obj['score']:.0%}"
+        (tw, th), baseline = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, .6, 1)
+        tx = max(0, min(start[0], w - tw - 8))
+        ty = max(th + 8, start[1])
+        cv2.rectangle(frame, (tx, ty - th - 8),
+                      (min(w - 1, tx + tw + 8), ty + baseline), (25, 25, 25), -1)
+        cv2.rectangle(frame, (tx, ty - th - 8),
+                      (min(w - 1, tx + tw + 8), ty + baseline), color, 1)
+        cv2.putText(frame, text, (tx + 4, ty - 4),
+                    cv2.FONT_HERSHEY_SIMPLEX, .6, color, 1)
 
 
 def consensus(observations: list[str | None]) -> tuple[str, int] | None:
