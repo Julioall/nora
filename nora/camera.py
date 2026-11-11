@@ -9,20 +9,44 @@ import unicodedata
 from . import tools
 
 
+def detect(vision, rgb) -> list[dict]:
+    result = vision.describe(rgb, language='en', sections=['objects'],
+                             fields=['bbox', 'score'], conf=.3, max_objects=12)
+    objects = result.get('objects', []) if isinstance(result, dict) else []
+    valid = []
+    for obj in objects:
+        if not isinstance(obj, dict):
+            continue
+        name = obj.get('name', obj.get('label', ''))
+        box = obj.get('bbox')
+        if not isinstance(name, str) or not any(c.isalpha() for c in name):
+            continue
+        if not isinstance(box, list) or len(box) != 4:
+            continue
+        try:
+            box = [max(0., min(1000., float(x))) for x in box]
+            score = float(obj.get('score', 0))
+        except (ValueError, TypeError):
+            continue
+        valid.append({'name': name, 'bbox': box, 'score': score})
+    return valid
+
+
 def identify(vision, rgb) -> str | None:
-    # Português não consta dos idiomas documentados do Mirage. O termo em inglês
-    # é pesquisado primeiro na Wikipédia pt, depois en, sem inventar tradução.
-    result = vision.extract(rgb, {'object_name': {'type': 'string'}},
-                            language='en', max_tokens=128)
-    value = result.get('form', {}).get('object_name') if isinstance(result, dict) else None
-    if isinstance(value, dict):
-        value = value.get('value')
-    if not isinstance(value, str):
-        return None
-    value = ' '.join(value.split()).strip(' ."')
-    if not value or len(value) > 80 or value.casefold() in {'unknown', 'none', 'nothing', 'n/a', 'person', 'hand', 'face'}:
-        return None
-    return value
+    objects = detect(vision, rgb)
+    return objects[0]['name'] if objects else None
+
+
+def draw_detections(cv2, frame, objects):
+    h, w = frame.shape[:2]
+    for obj in objects:
+        x0, y0, x1, y1 = obj['bbox']
+        start = (int(x0 * w / 1000), int(y0 * h / 1000))
+        end = (int(x1 * w / 1000), int(y1 * h / 1000))
+        cv2.rectangle(frame, start, end, (120, 220, 240), 2)
+        cv2.putText(frame, f"{obj['name']} {obj['score']:.0%}",
+                    (start[0], max(20, start[1] - 5)), cv2.FONT_HERSHEY_SIMPLEX,
+                    .6, (120, 220, 240), 2)
 
 
 def consensus(observations: list[str | None]) -> tuple[str, int] | None:
@@ -126,6 +150,7 @@ def run_camera(index: int = 0, seconds: float = 8, preview: bool = True) -> int:
     result_label = None
     result_text = 'Mostre um objeto no centro da imagem.'
     read_failures = 0
+    detections = []
     try:
         if not cap.isOpened():
             raise RuntimeError(f'Não foi possível abrir a câmera {index}. Verifique a permissão e se outro programa está usando-a.')
@@ -176,7 +201,11 @@ def run_camera(index: int = 0, seconds: float = 8, preview: bool = True) -> int:
                     cooldown_until = now + 3
                     state = 'pausa'
                 else:
-                    label = job.result()
+                    detections = job.result()
+                    candidates = [obj for obj in detections if obj['name'].casefold() not in {'person', 'hand', 'face'}]
+                    # Prefer an object near the center, where the user presents it.
+                    candidates.sort(key=lambda obj: abs((obj['bbox'][0] + obj['bbox'][2]) / 2 - 500) + abs((obj['bbox'][1] + obj['bbox'][3]) / 2 - 500))
+                    label = candidates[0]['name'] if candidates else None
                     result_label = label
                     result_text = f'Observando: {label}' if label else 'Não consegui identificar o objeto neste quadro.'
                     observations.append(label)
@@ -201,13 +230,12 @@ def run_camera(index: int = 0, seconds: float = 8, preview: bool = True) -> int:
                         cooldown_until = now + 3
                         state = 'pausa'
                 elif now >= next_sample:
-                    crop = frame[y0:y1, x0:x1]
-                    crop = cv2.resize(crop, (384, 384))
+                    crop = frame.copy()
                     rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-                    pending = pool.submit(identify, vision, rgb)
+                    pending = pool.submit(detect, vision, rgb)
                     next_sample = now + .8
             if preview:
-                cv2.rectangle(frame, (x0, y0), (x1, y1), (0, 200, 0), 2)
+                draw_detections(cv2, frame, detections)
                 remaining = max(0, int(deadline - now))
                 status = f'{state} {remaining if state == "observando" else ""}'
                 cv2.imshow(title, _panel(cv2, frame, status, result_label, result_text))
