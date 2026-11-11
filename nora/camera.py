@@ -73,6 +73,42 @@ class CameraResearch:
         return self._search_tool(subject)
 
 
+def _open_camera(cv2, index: int):
+    """Prefer DirectShow on Windows; let OpenCV choose elsewhere."""
+    if hasattr(cv2, 'CAP_DSHOW'):
+        cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)
+        if cap.isOpened():
+            return cap
+        cap.release()
+    return cv2.VideoCapture(index)
+
+
+def _panel(cv2, frame, state: str, label: str | None, details: str) :
+    """Compose camera image above a readable result panel."""
+    width = 900
+    height = max(1, int(frame.shape[0] * width / frame.shape[1]))
+    camera = cv2.resize(frame, (width, height))
+    panel = __import__('numpy').full((250, width, 3), 28, dtype='uint8')
+    cv2.putText(panel, state.upper(), (24, 34), cv2.FONT_HERSHEY_SIMPLEX, .7, (80, 210, 140), 2)
+    heading = f'Identificação: {label or "aguardando objeto"}'
+    cv2.putText(panel, heading[:72], (24, 74), cv2.FONT_HERSHEY_SIMPLEX, .65, (245, 245, 245), 2)
+    # Wrap the model summary into lines that fit the fixed-width panel.
+    words = details.replace('\n', ' ').split()
+    lines, line = [], ''
+    for word in words:
+        candidate = (line + ' ' + word).strip()
+        if len(candidate) > 98 and line:
+            lines.append(line)
+            line = word
+        else:
+            line = candidate
+    if line:
+        lines.append(line)
+    for i, text in enumerate(lines[:5]):
+        cv2.putText(panel, text, (24, 112 + i * 27), cv2.FONT_HERSHEY_SIMPLEX, .52, (220, 220, 220), 1)
+    return __import__('numpy').vstack((camera, panel))
+
+
 def run_camera(index: int = 0, seconds: float = 8, preview: bool = True) -> int:
     try:
         import cv2
@@ -83,10 +119,13 @@ def run_camera(index: int = 0, seconds: float = 8, preview: bool = True) -> int:
     print('Carregando Mirage e Needle 3...')
     vision = cactus.Mirage()
     research = CameraResearch()
-    cap = cv2.VideoCapture(index)
+    cap = _open_camera(cv2, index)
     pool = ThreadPoolExecutor(max_workers=1)
     pending = None
     title = 'NORA - camera (Q ou Esc para sair)'
+    result_label = None
+    result_text = 'Mostre um objeto no centro da imagem.'
+    read_failures = 0
     try:
         if not cap.isOpened():
             raise RuntimeError(f'Não foi possível abrir a câmera {index}. Verifique a permissão e se outro programa está usando-a.')
@@ -100,7 +139,24 @@ def run_camera(index: int = 0, seconds: float = 8, preview: bool = True) -> int:
         while True:
             ok, frame = cap.read()
             if not ok:
-                raise RuntimeError('A câmera parou de fornecer imagens.')
+                read_failures += 1
+                if preview:
+                    canvas = _panel(cv2, __import__('numpy').zeros((360, 640, 3), dtype='uint8'), 'reconectando câmera', result_label, result_text)
+                    cv2.imshow(title, canvas)
+                    if cv2.waitKey(1) & 0xFF in (27, ord('q'), ord('Q')):
+                        break
+                if read_failures >= 8:
+                    cap.release()
+                    time.sleep(.5)
+                    cap = _open_camera(cv2, index)
+                    read_failures = 0
+                    if not cap.isOpened():
+                        result_text = 'Não consegui reabrir a câmera. Tentando novamente...'
+                        time.sleep(1)
+                else:
+                    time.sleep(.15)
+                continue
+            read_failures = 0
             now = time.monotonic()
             height, width = frame.shape[:2]
             # Região central destacada: reduz interferência do fundo e da pessoa.
@@ -110,7 +166,9 @@ def run_camera(index: int = 0, seconds: float = 8, preview: bool = True) -> int:
                 job, pending = pending, None
                 if state == 'pesquisando':
                     result = job.result()
-                    print(result.get('message', 'Não houve resposta da pesquisa.'))
+                    result_label = last_label
+                    result_text = result.get('message', 'Não houve resposta da pesquisa.')
+                    print(result_text)
                     if result.get('source'):
                         print('Fonte:', result['source'])
                     else:
@@ -119,6 +177,8 @@ def run_camera(index: int = 0, seconds: float = 8, preview: bool = True) -> int:
                     state = 'pausa'
                 else:
                     label = job.result()
+                    result_label = label
+                    result_text = f'Observando: {label}' if label else 'Não consegui identificar o objeto neste quadro.'
                     observations.append(label)
                     print(f'Amostra {len(observations)}: {label or "sem identificação"}')
             if state == 'pausa' and now >= cooldown_until:
@@ -149,8 +209,8 @@ def run_camera(index: int = 0, seconds: float = 8, preview: bool = True) -> int:
             if preview:
                 cv2.rectangle(frame, (x0, y0), (x1, y1), (0, 200, 0), 2)
                 remaining = max(0, int(deadline - now))
-                cv2.putText(frame, f'{state} {remaining if state == "observando" else ""}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, .7, (0, 200, 0), 2)
-                cv2.imshow(title, frame)
+                status = f'{state} {remaining if state == "observando" else ""}'
+                cv2.imshow(title, _panel(cv2, frame, status, result_label, result_text))
                 if cv2.waitKey(1) & 0xFF in (27, ord('q'), ord('Q')):
                     break
                 if cv2.getWindowProperty(title, cv2.WND_PROP_VISIBLE) < 1:

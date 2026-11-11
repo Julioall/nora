@@ -77,7 +77,7 @@ python -m pip install -r requirements.txt
 python -m nora --camera
 ```
 
-Uma janela nativa mostra a webcam e um retângulo central. Coloque **um objeto dentro do retângulo**, com boa iluminação. A NORA:
+Uma interface local em janela mostra a webcam na parte superior e, abaixo, o objeto identificado, a descrição da Wikipédia e o link da fonte. O retângulo central indica a área analisada. Coloque **um objeto dentro do retângulo**, com boa iluminação. A NORA:
 
 1. Observa durante aproximadamente 8 segundos, analisando uma amostra a cada 0,8 segundo no máximo (até 12 amostras por ciclo).
 2. Usa **Mirage** para extrair o nome do objeto de cada imagem central.
