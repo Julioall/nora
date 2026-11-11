@@ -81,7 +81,7 @@ Uma interface local em janela mostra a webcam na parte superior e, abaixo, o obj
 
 1. Observa durante aproximadamente 8 segundos, analisando uma amostra a cada 0,8 segundo no máximo (até 12 amostras por ciclo).
 2. Usa **Mirage** para extrair o nome do objeto de cada imagem central.
-3. Exige pelo menos 3 amostras com o mesmo nome e concordância em 70% das amostras, contando também as tentativas sem identificação. Essa medida é consistência temporal, não probabilidade de acerto.
+3. Escolhe o objeto com mais ocorrências no ciclo, exigindo pelo menos 3 ocorrências e liderança sem empate. Pessoas, elementos do fundo e amostras vazias não disputam a pesquisa. Não exige mais 70% das amostras. Essa medida é consistência temporal, não probabilidade de acerto.
 4. Apresenta “Parece ser…” e envia o candidato ao **Needle 3**, com acesso somente à ferramenta de pesquisa. A pesquisa só roda se o Needle selecionar essa ferramenta com o mesmo termo observado.
 5. Mostra o resumo da Wikipédia e o link no terminal. Depois de uma pausa de 3 segundos, começa outra observação. Uma consulta bem-sucedida não se repete enquanto o mesmo objeto continuar sendo reconhecido; uma mudança ou ciclo sem consenso libera uma nova consulta.
 

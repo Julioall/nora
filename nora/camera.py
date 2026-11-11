@@ -25,7 +25,7 @@ PORTUGUESE = {
 }
 BACKGROUND = {'person', 'man', 'woman', 'boy', 'girl', 'human', 'people',
               'hand', 'face', 'head', 'wall', 'floor', 'ceiling', 'door',
-              'window', 'table', 'desk', 'chair', 'background'}
+              'window', 'table', 'wooden table', 'desk', 'chair', 'background', 'text', 'app icon'}
 
 
 def search_term(label: str) -> str:
@@ -73,12 +73,20 @@ def draw_detections(cv2, frame, objects):
 
 
 def consensus(observations: list[str | None]) -> tuple[str, int] | None:
-    """Exige três votos e 70% das amostras, incluindo falhas de detecção."""
-    valid = [unicodedata.normalize('NFKC', x).casefold() for x in observations if x]
-    if not valid:
+    """Prioriza a classe mais frequente, com três votos e sem empate."""
+    valid = []
+    for value in observations:
+        if not value:
+            continue
+        label = unicodedata.normalize('NFKC', value).casefold().strip()
+        if label in BACKGROUND or not any(char.isalpha() for char in label):
+            continue
+        valid.append(label)
+    ranked = Counter(valid).most_common(2)
+    if not ranked:
         return None
-    label, count = Counter(valid).most_common(1)[0]
-    if count < 3 or count / len(observations) < .7:
+    label, count = ranked[0]
+    if count < 3 or (len(ranked) > 1 and ranked[1][1] == count):
         return None
     return label, count
 
